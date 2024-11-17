@@ -7,6 +7,5 @@ flask-pymongo
 pymongo
 python-dotenv
 requests
-flask-pymongo
 gunicorn
 scikit-learn
