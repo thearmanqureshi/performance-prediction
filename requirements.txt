@@ -1,8 +1,11 @@
 flask
+werkzeug
 numpy
 pandas
 tensorflow
+flask-pymongo
 pymongo
 python-dotenv
 requests
 flask-pymongo
+gunicorn
