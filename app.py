@@ -152,8 +152,10 @@ def predict():
         studytime = float(request.form['study_time'])
         failures = int(request.form['failures'])
 
+        # Validate input data
         validate_input(age, year1_marks, year2_marks, studytime, failures)
         
+        # Make prediction
         prediction = predict_new_input(
             model, scaler, age, year1_marks, year2_marks, studytime, failures
         )
@@ -161,11 +163,13 @@ def predict():
         if prediction is None:
             return jsonify({'error': 'Prediction failed'}), 500
 
+        # Cap the prediction score to the max allowed value
         capped_prediction = min(
             round(float(prediction), 2), 
             app.config['MAX_PREDICTION_SCORE']
         )
 
+        # Prepare data for MongoDB
         data = {
             'name': name,
             'age': age,
@@ -177,6 +181,7 @@ def predict():
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
+        # Save prediction data to MongoDB
         if not save_to_mongo(data):
             return jsonify({'error': 'Database error'}), 500
 
@@ -189,4 +194,3 @@ def predict():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
-
