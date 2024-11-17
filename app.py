@@ -11,7 +11,6 @@ import io
 from config import ProductionConfig, DevelopmentConfig
 import os
 import logging
-from flask_wtf.csrf import CSRFProtect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,8 +23,7 @@ if os.environ.get('FLASK_ENV') == 'production':
 else:
     app.config.from_object(DevelopmentConfig)
 
-# Initialize extensions
-csrf = CSRFProtect(app)
+# Initialize MongoDB
 mongo = PyMongo(app)
 
 def download_and_load_model(url):
@@ -146,3 +144,6 @@ def predict():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+if __name__ == '__main__':
+    app.run(debug=app.config['DEBUG'])
