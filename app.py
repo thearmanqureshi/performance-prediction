@@ -10,10 +10,7 @@ import io
 from flask_bcrypt import Bcrypt
 import os
 from config import ProductionConfig, DevelopmentConfig
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
 
@@ -125,6 +122,3 @@ def predict():
         return jsonify({'error': 'Invalid input. Please ensure all fields contain correct values.'}), 400
     except Exception as e:
         return jsonify({'error': 'Internal server error.'}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True)
