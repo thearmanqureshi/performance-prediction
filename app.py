@@ -27,6 +27,10 @@ else:
 # Initialize MongoDB
 mongo = PyMongo(app)
 
+# Global model and scaler variables
+model = None
+scaler = None
+
 def download_and_load_model(url):
     """
     Downloads a Keras model from a URL and loads it from a temporary file.
@@ -123,13 +127,18 @@ def predict_new_input(model, scaler, age, year1_marks, year2_marks, studytime, f
         logger.error(f"Prediction failed: {str(e)}")
         return None
 
-# Load the model and scaler
-try:
-    model = download_and_load_model(app.config['MODEL_URL'])
-    scaler = download_and_load_scaler(app.config['SCALER_URL'])
-except Exception as e:
-    logger.critical(f"Failed to initialize model or scaler: {str(e)}")
-    raise
+# Load the model and scaler during app initialization
+def initialize_model_and_scaler():
+    global model, scaler
+    try:
+        model = download_and_load_model(app.config['MODEL_URL'])
+        scaler = download_and_load_scaler(app.config['SCALER_URL'])
+        logger.info("Model and scaler loaded successfully.")
+    except Exception as e:
+        logger.critical(f"Failed to initialize model or scaler: {str(e)}")
+        raise
+
+initialize_model_and_scaler()  # Call this once when the app starts
 
 @app.route('/')
 def index():
