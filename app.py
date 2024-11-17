@@ -190,5 +190,3 @@ def predict():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
-if __name__ == '__main__':
-    app.run(debug=app.config['DEBUG'])
