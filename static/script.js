@@ -1,43 +1,32 @@
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('prediction-form');
-    const resultDiv = document.getElementById('result');
-    const resultText = document.getElementById('prediction-result');
+    const resultElement = document.getElementById('prediction-result');
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        resultText.textContent = "Processing...";
-        resultDiv.classList.add("loading");
-
-        // Create JSON data from the form inputs
         const formData = new FormData(form);
-        const jsonData = {};
-        formData.forEach((value, key) => {
-            jsonData[key] = key === 'name' ? value : parseFloat(value) || 0; 
-        });
 
         try {
             const response = await fetch('/predict', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(jsonData),
+                body: formData
             });
 
+            // Check for response.ok before parsing JSON
             if (!response.ok) {
-                const errorMessage = `HTTP Error: ${response.status}`;
-                throw new Error(errorMessage);
+                const errorText = await response.text();
+                throw new Error(`HTTP error! Status: ${response.status}, Message: ${errorText}`);
             }
 
             const data = await response.json();
-            if (data.prediction) {
-                resultText.textContent = `Predicted Final Marks: ${data.prediction}`;
+            if (data.prediction !== undefined) {
+                resultElement.textContent = `Prediction: ${data.prediction}`;
             } else {
-                resultText.textContent = `Error: ${data.error || "Unexpected error occurred"}`;
+                resultElement.textContent = `Error: ${data.error || 'No prediction available'}`;
             }
         } catch (error) {
-            console.error('Error:', error.message || error);
-            resultText.textContent = 'An error occurred while processing your request.';
-        } finally {
-            resultDiv.classList.remove("loading");
+            console.error("Error:", error);
+            resultElement.textContent = `Error: ${error.message}`;
         }
     });
 });
