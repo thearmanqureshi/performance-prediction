@@ -1,39 +1,39 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function () {
     const form = document.getElementById('prediction-form');
-    const resultElement = document.getElementById('prediction-result');
-    const errorElement = document.getElementById('error-result');  // To display error messages
+    const resultDiv = document.getElementById('result');
+    const resultText = document.getElementById('prediction-result');
 
-    form.addEventListener('submit', async (event) => {
+    form.addEventListener('submit', function (event) {
         event.preventDefault();
-        
-        // Clear previous result and error messages
-        resultElement.textContent = '';
-        errorElement.textContent = '';
-        
+        resultText.textContent = "Processing...";
+
         const formData = new FormData(form);
+        const jsonData = {};
+        formData.forEach((value, key) => {
+            jsonData[key] = key === 'name' ? value : Number(value);
+        });
 
-        try {
-            // Send POST request to Flask API
-            const response = await fetch('/predict', {
-                method: 'POST',
-                body: formData
+        fetch('/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(jsonData),
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.prediction) {
+                    resultText.textContent = `Predicted Final Marks: ${data.prediction}`;
+                } else {
+                    resultText.textContent = `Error: ${data.error}`;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                resultText.textContent = 'An error occurred while processing your request.';
             });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || `HTTP error! status: ${response.status}`);
-            }
-
-            // Check for prediction data and display it
-            if (data.prediction !== undefined) {
-                resultElement.textContent = `Prediction: ${data.prediction}`;
-            } else {
-                errorElement.textContent = `Error: ${data.error || 'No prediction available'}`;
-            }
-        } catch (error) {
-            console.error("Error:", error);
-            errorElement.textContent = `Error: ${error.message}`;
-        }
     });
 });
