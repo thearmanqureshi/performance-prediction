@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         const formData = new FormData(form);
 
+        // Clear any previous result messages
+        resultElement.textContent = 'Processing...';
+
         try {
             const response = await fetch('/predict', {
                 method: 'POST',
@@ -19,13 +22,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
+
             if (data.prediction !== undefined) {
+                // Display the prediction result
                 resultElement.textContent = `Prediction: ${data.prediction}`;
             } else {
+                // Display error message if no prediction is available
                 resultElement.textContent = `Error: ${data.error || 'No prediction available'}`;
             }
+
         } catch (error) {
             console.error("Error:", error);
+            // Display error message in resultElement
             resultElement.textContent = `Error: ${error.message}`;
         }
     });
