@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 import numpy as np
 import pandas as pd
-from tensorflow.keras.models import load_model
+from tensorflow.lite.python.interpreter import Interpreter
 import pickle
 from datetime import datetime
 from flask_pymongo import PyMongo
@@ -27,118 +27,96 @@ else:
 # Initialize MongoDB
 mongo = PyMongo(app)
 
-# Global model and scaler variables
-model = None
+# Global variables
+interpreter = None
 scaler = None
 
-def download_and_load_model(url):
+
+def download_file(url, suffix):
     """
-    Downloads a Keras model from a URL and loads it from a temporary file.
+    Downloads a file from a URL and saves it to a temporary location.
+    Returns the file path.
     """
     try:
-        response = requests.get(url)
+        response = requests.get(url, stream=True)
         response.raise_for_status()
-        
-        # Save to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".h5") as temp_file:
-            temp_file.write(response.content)
-            temp_file_path = temp_file.name
 
-        # Load model from temporary file
-        model = load_model(temp_file_path)
-
-        # Cleanup
-        os.unlink(temp_file_path)
-
-        return model
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            for chunk in response.iter_content(chunk_size=8192):
+                temp_file.write(chunk)
+            return temp_file.name
     except Exception as e:
-        logger.error(f"Failed to download or load model: {str(e)}")
+        logger.error(f"Failed to download file from {url}: {str(e)}")
         raise
 
-def download_and_load_scaler(url):
+
+def load_tflite_model(model_path):
     """
-    Downloads a scaler from a URL and loads it from a temporary file.
+    Loads the TensorFlow Lite model into an interpreter.
     """
     try:
-        response = requests.get(url)
-        response.raise_for_status()
+        interpreter = Interpreter(model_path=model_path)
+        interpreter.allocate_tensors()
+        logger.info("TensorFlow Lite model loaded successfully.")
+        return interpreter
+    except Exception as e:
+        logger.error(f"Failed to load TensorFlow Lite model: {str(e)}")
+        raise
 
-        # Save to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(response.content)
-            temp_file_path = temp_file.name
 
-        # Load scaler
-        with open(temp_file_path, 'rb') as f:
+def load_scaler(scaler_path):
+    """
+    Loads the scaler from a file.
+    """
+    try:
+        with open(scaler_path, 'rb') as f:
             scaler = pickle.load(f)
-
-        # Cleanup
-        os.unlink(temp_file_path)
-
+        logger.info("Scaler loaded successfully.")
         return scaler
     except Exception as e:
-        logger.error(f"Failed to download or load scaler: {str(e)}")
+        logger.error(f"Failed to load scaler: {str(e)}")
         raise
 
-def validate_input(age, year1_marks, year2_marks, studytime, failures):
-    """
-    Validates the input data for prediction.
-    """
-    if not (0 <= age <= app.config['MAX_AGE']):
-        raise ValueError(f"Age must be between 0 and {app.config['MAX_AGE']}")
-    if not (0 <= year1_marks <= 100):
-        raise ValueError("Year 1 marks must be between 0 and 100")
-    if not (0 <= year2_marks <= 100):
-        raise ValueError("Year 2 marks must be between 0 and 100")
-    if not (0 <= studytime <= app.config['MAX_STUDY_HOURS']):
-        raise ValueError(f"Study time must be between 0 and {app.config['MAX_STUDY_HOURS']}")
-    if not (0 <= failures <= app.config['MAX_FAILURES']):
-        raise ValueError(f"Failures must be between 0 and {app.config['MAX_FAILURES']}")
-    return True
 
-def save_to_mongo(data):
-    """
-    Saves data to MongoDB.
-    """
-    try:
-        collection = mongo.db.student_performance_data
-        result = collection.insert_one(data)
-        return result.inserted_id is not None
-    except Exception as e:
-        logger.error(f"Failed to save to MongoDB: {str(e)}")
-        return False
-
-def predict_new_input(model, scaler, age, year1_marks, year2_marks, studytime, failures):
-    """
-    Prepares input data, scales it, and makes a prediction using the model.
-    """
-    try:
-        new_input = pd.DataFrame({
-            'age': [age],
-            'year1_marks': [year1_marks],
-            'year2_marks': [year2_marks],
-            'studytime': [studytime],
-            'failures': [failures]
-        })
-        new_input_scaled = scaler.transform(new_input)
-        predicted_marks = model.predict(new_input_scaled)
-        return predicted_marks[0][0]
-    except Exception as e:
-        logger.error(f"Prediction failed: {str(e)}")
-        return None
-
-# Load the model and scaler during app initialization
 def initialize_model_and_scaler():
-    global model, scaler
+    """
+    Initializes the TensorFlow Lite model and scaler by downloading them from the configured URLs.
+    """
+    global interpreter, scaler
     try:
-        model = download_and_load_model(app.config['MODEL_URL'])
-        scaler = download_and_load_scaler(app.config['SCALER_URL'])
-        logger.info("Model and scaler loaded successfully.")
+        model_path = download_file(app.config['MODEL_URL'], '.tflite')
+        scaler_path = download_file(app.config['SCALER_URL'], '.pkl')
+
+        interpreter = load_tflite_model(model_path)
+        scaler = load_scaler(scaler_path)
+
+        # Clean up temporary files
+        os.unlink(model_path)
+        os.unlink(scaler_path)
     except Exception as e:
         logger.critical(f"Failed to initialize model or scaler: {str(e)}")
         raise
 
-initialize_model_and_scaler()  # Call this once when the app starts
+
+def predict_with_tflite(interpreter, input_data):
+    """
+    Runs a prediction using the TensorFlow Lite interpreter.
+    """
+    try:
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+
+        # Prepare input tensor
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.invoke()
+
+        # Get the prediction
+        prediction = interpreter.get_tensor(output_details[0]['index'])
+        return prediction[0][0]
+    except Exception as e:
+        logger.error(f"Prediction with TensorFlow Lite failed: {str(e)}")
+        return None
+
 
 @app.route('/')
 def index():
@@ -146,6 +124,7 @@ def index():
     Renders the home page.
     """
     return render_template('index.html')
+
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -161,22 +140,36 @@ def predict():
         studytime = float(request.form['study_time'])
         failures = int(request.form['failures'])
 
-        # Validate input data
-        validate_input(age, year1_marks, year2_marks, studytime, failures)
-        
-        # Make prediction
-        prediction = predict_new_input(
-            model, scaler, age, year1_marks, year2_marks, studytime, failures
-        )
+        if not (0 <= age <= app.config['MAX_AGE']):
+            raise ValueError(f"Age must be between 0 and {app.config['MAX_AGE']}")
+        if not (0 <= year1_marks <= 100):
+            raise ValueError("Year 1 marks must be between 0 and 100")
+        if not (0 <= year2_marks <= 100):
+            raise ValueError("Year 2 marks must be between 0 and 100")
+        if not (0 <= studytime <= app.config['MAX_STUDY_HOURS']):
+            raise ValueError(f"Study time must be between 0 and {app.config['MAX_STUDY_HOURS']}")
+        if not (0 <= failures <= app.config['MAX_FAILURES']):
+            raise ValueError(f"Failures must be between 0 and {app.config['MAX_FAILURES']}")
 
+        # Prepare input data for prediction
+        input_data = pd.DataFrame({
+            'age': [age],
+            'year1_marks': [year1_marks],
+            'year2_marks': [year2_marks],
+            'studytime': [studytime],
+            'failures': [failures]
+        })
+
+        scaled_data = scaler.transform(input_data)
+        scaled_data = scaled_data.astype(np.float32)
+
+        # Run the prediction
+        prediction = predict_with_tflite(interpreter, scaled_data)
         if prediction is None:
             return jsonify({'error': 'Prediction failed'}), 500
 
         # Cap the prediction score to the max allowed value
-        capped_prediction = min(
-            round(float(prediction), 2), 
-            app.config['MAX_PREDICTION_SCORE']
-        )
+        capped_prediction = min(round(float(prediction), 2), app.config['MAX_PREDICTION_SCORE'])
 
         # Prepare data for MongoDB
         data = {
@@ -191,11 +184,10 @@ def predict():
         }
 
         # Save prediction data to MongoDB
-        if not save_to_mongo(data):
-            return jsonify({'error': 'Database error'}), 500
+        collection = mongo.db.student_performance_data
+        collection.insert_one(data)
 
         return jsonify({'prediction': capped_prediction})
-    
     except KeyError:
         return jsonify({'error': 'Missing required field'}), 400
     except ValueError as ve:
@@ -203,3 +195,7 @@ def predict():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+
+# Initialize model and scaler at startup
+initialize_model_and_scaler()
